@@ -1,10 +1,13 @@
 ﻿using System;
+using Chaos.NaCl;
 using JetBrains.Annotations;
-using StellarBase;
-using StellarBase.Generated;
 using Lykke.Service.Stellar.Sign.Core.Services;
 using Lykke.Service.Stellar.Sign.Core.Encoding;
 using Lykke.Service.Stellar.Sign.Core.Domain;
+using stellar_dotnet_sdk;
+using stellar_dotnet_sdk.xdr;
+using FormatException = System.FormatException;
+using Transaction = stellar_dotnet_sdk.Transaction;
 
 namespace Lykke.Service.Stellar.Sign.Services
 {
@@ -16,7 +19,11 @@ namespace Lykke.Service.Stellar.Sign.Services
         public StellarService(string network,
                               string depositBaseAddress)
         {
-            Network.CurrentNetwork = network;
+            if (network != "Test SDF Network ; September 2015")
+                Network.UsePublicNetwork();
+            else
+                Network.UseTestNetwork();
+
             _depositBaseAddress = depositBaseAddress;
         }
 
@@ -30,7 +37,7 @@ namespace Lykke.Service.Stellar.Sign.Services
             var keyPair = KeyPair.Random();
             return new Core.Domain.Stellar.KeyPair
             {
-                Seed = keyPair.Seed,
+                Seed = keyPair.SecretSeed,
                 Address = keyPair.Address
             };
         }
@@ -54,61 +61,36 @@ namespace Lykke.Service.Stellar.Sign.Services
                 throw new ArgumentException("Invalid base64 encoded transaction XDR", nameof(xdrBase64), ex);
             }
 
-            var reader = new ByteReader(xdr);
-            var tx = StellarBase.Generated.Transaction.Decode(reader);
+            var inputStream = new XdrDataInputStream(xdr);
+            var xdrTransaction = stellar_dotnet_sdk.xdr.TransactionEnvelope.Decode(inputStream);
+            var txV1 = xdrTransaction;
+            var tx = TransactionBuilder.FromEnvelopeXdr(txV1);
             var txHash = GetTransactionHash(tx);
 
             var seed = seeds[0];
-            DecoratedSignature signature;
             if (Constants.NoPrivateKey.Equals(seed, StringComparison.Ordinal))
             {
-                signature = new DecoratedSignature
+            }
+            else
+            {
+                try
                 {
-                    Hint = new SignatureHint(new byte[4]),
-                    Signature = new Signature(new byte[64])
-                };
-            }
-            else 
-            {
-                var signer = KeyPair.FromSeed(seed);
-                signature = signer.SignDecorated(txHash);
+                    var signer = KeyPair.FromSecretSeed(seed);
+                    tx.Sign(signer);
+                }
+                catch (Exception ex)
+                {
+                    throw new ArgumentException("Invalid base64 encoded transaction XDR", nameof(xdrBase64), ex);
+                }
+                
             }
 
-            var signedTx = CreateEnvelopeXdrBase64(tx, signature);
-            return signedTx;
+            return tx.ToEnvelopeXdrBase64(TransactionBase.TransactionXdrVersion.V1);
         }
 
-        private static byte[] GetTransactionHash(StellarBase.Generated.Transaction tx)
+        private static byte[] GetTransactionHash(TransactionBase tx)
         {
-            var writer = new ByteWriter();
-
-            // Hashed NetworkID
-            writer.Write(Network.CurrentNetworkId);
-
-            // Envelope Type - 4 bytes
-            EnvelopeType.Encode(writer, EnvelopeType.Create(EnvelopeType.EnvelopeTypeEnum.ENVELOPE_TYPE_TX));
-
-            // Transaction XDR bytes
-            var txWriter = new ByteWriter();
-            StellarBase.Generated.Transaction.Encode(txWriter, tx);
-            writer.Write(txWriter.ToArray());
-
-            var data = writer.ToArray();
-            return Utilities.Hash(data);
-        }
-
-        private static string CreateEnvelopeXdrBase64(StellarBase.Generated.Transaction tx, DecoratedSignature signature)
-        {
-            var txEnvelope = new TransactionEnvelope
-            {
-                Tx = tx,
-                Signatures = new[] { signature }
-            };
-
-            var writer = new ByteWriter();
-            TransactionEnvelope.Encode(writer, txEnvelope);
-            var data = writer.ToArray();
-            return Convert.ToBase64String(data);
+            return tx.Hash();
         }
     }
 }
