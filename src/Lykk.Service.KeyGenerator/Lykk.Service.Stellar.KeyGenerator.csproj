@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="csharp-stellar-base" Version="1.0.3" />
+    <PackageReference Include="stellar-dotnet-sdk" Version="5.1.1" />
   </ItemGroup>
 
 </Project>

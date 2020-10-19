@@ -14,9 +14,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="csharp-stellar-base" Version="1.0.3" />
     <PackageReference Include="Lykke.Common" Version="7.0.3" />
     <PackageReference Include="Lykke.SettingsReader" Version="2.4.1" />
+    <PackageReference Include="stellar-dotnet-sdk" Version="5.1.1" />
   </ItemGroup>
 
 </Project>
